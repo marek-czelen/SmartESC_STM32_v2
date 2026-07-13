@@ -16,6 +16,7 @@
 #define VESC_PROTO_H
 
 #include <Arduino.h>
+#include "pinout.h"
 
 // ============================================================================
 // ID komend VESC
