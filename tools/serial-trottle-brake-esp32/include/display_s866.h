@@ -51,6 +51,7 @@
 #define DISPLAY_S866_H
 
 #include <Arduino.h>
+#include "vesc_proto.h"
 
 // ============================================================================
 // Stałe protokołu
@@ -132,5 +133,16 @@ void s866_deinit();
  * Ustawia ctx->connected na true/false.
  */
 void s866_service(s866_display_t* ctx);
+
+/**
+ * @brief Aktualizuje dane TX wyświetlacza na podstawie telemetrii ESC i stanu hamulca.
+ *
+ * Wypełnia ctx->tx (error, brake, current, wheeltime) przed wysłaniem ramki.
+ *
+ * @param ctx          Kontekst wyświetlacza
+ * @param telem        Aktualna telemetria ESC (może być NULL)
+ * @param brake_active Czy hamulec jest aktywny
+ */
+void s866_update_tx(s866_display_t* ctx, const esc_telem_t* telem, bool brake_active);
 
 #endif // DISPLAY_S866_H

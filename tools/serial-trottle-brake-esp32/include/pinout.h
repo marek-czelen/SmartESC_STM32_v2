@@ -47,6 +47,22 @@
 #define ESC_BAUD_RATE           115200
 
 // ============================================================================
+// Zasilanie płytki M365 (sterowanie TPS_ENA przez ESP32)
+// ============================================================================
+
+/**
+ * @brief GPIO sterujące tranzystorem podtrzymującym zasilanie płytki M365.
+ *
+ * Podłączone do linii TPS_ENA (PC15 na STM32 po usunięciu oryginalnego MCU).
+ * HIGH (3.3V) = płytka WŁĄCZONA (podtrzymanie zasilania)
+ * LOW  (0V)  = płytka WYŁĄCZONA (odcięcie zasilania)
+ */
+#define PIN_M365_POWER           19  // GPIO19 → TPS_ENA
+
+/// Opóźnienie po włączeniu zasilania M365 przed inicjalizacją UART [ms]
+#define M365_POWER_ON_DELAY_MS   500
+
+// ============================================================================
 // Wejścia czujników
 // ============================================================================
 
@@ -64,7 +80,7 @@
 // ============================================================================
 
 /// Dolny próg przepustnicy [ADC RAW] — poniżej = 0%
-#define THR_ADC_MIN             200
+#define THR_ADC_MIN             250
 
 /// Górny próg przepustnicy [ADC RAW] — powyżej = 100%
 #define THR_ADC_MAX             2600
@@ -74,25 +90,6 @@
 
 /// Maksymalne odchylenie od mediany do odrzucenia outliera [ADC RAW]
 #define THR_OUTLIER_THRESH      150
-
-// ============================================================================
-// PAS — konfiguracja
-// ============================================================================
-
-/// Domyślny czas debounce PAS [µs] (minimalny półokres między krawędziami)
-#define PAS_DEBOUNCE_US         3000
-
-/// Próg asymetrii do detekcji kierunku [%] (różnica HIGH vs LOW > X% → direction)
-#define PAS_DIR_ASYMMETRY_PCT   5
-
-/// Maksymalna kadencja PAS [RPM] (do ograniczenia zakresu)
-#define PAS_MAX_CADENCE_RPM     120
-
-/// Timeout PAS: brak impulsów przez X ms → kadencja = 0
-#define PAS_TIMEOUT_MS          500
-
-/// Czas potwierdzenia stałego pedałowania do przodu przed startem [ms]
-#define PAS_START_DELAY_MS      300
 
 // ============================================================================
 // Hamulec — konfiguracja

@@ -33,7 +33,7 @@
 
 #define VESC_FRAME_START        0x02
 #define VESC_FRAME_STOP         0x03
-#define VESC_MAX_PAYLOAD        64      ///< Maksymalna długość payloadu
+#define VESC_MAX_PAYLOAD        128     ///< Maksymalna długość payloadu (COMM_GET_VALUES ~74B)
 
 // ============================================================================
 // Struktura telemetrii ESC

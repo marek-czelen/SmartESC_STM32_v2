@@ -15,6 +15,7 @@
 
 #include "display_s866.h"
 #include "pinout.h"
+#include "vesc_proto.h"
 
 // ============================================================================
 // Funkcje wewnętrzne
@@ -157,5 +158,28 @@ void s866_service(s866_display_t* ctx) {
     if (!ctx->connected && ctx->first_valid_ms > 0 &&
         (now - ctx->last_valid_ms > S866_TIMEOUT_MS)) {
         ctx->first_valid_ms = 0;
+    }
+}
+
+// ============================================================================
+// Aktualizacja danych TX
+// ============================================================================
+
+void s866_update_tx(s866_display_t* ctx, const esc_telem_t* telem, bool brake_active) {
+    ctx->tx.error = (telem && telem->valid) ? telem->fault : 0;
+    ctx->tx.brake_active = brake_active ? 1 : 0;
+
+    float current = (telem && telem->valid) ? telem->current_motor : 0.0f;
+    ctx->tx.current_x10 = (uint16_t)(current * 10.0f);
+
+    if (telem && telem->valid && telem->rpm > 10.0f) {
+        float wheel_rpm = telem->rpm;
+        if (wheel_rpm > 0.5f) {
+            ctx->tx.wheeltime_ms = (uint16_t)(60000.0f / wheel_rpm);
+        } else {
+            ctx->tx.wheeltime_ms = 0;
+        }
+    } else {
+        ctx->tx.wheeltime_ms = 0;
     }
 }

@@ -201,6 +201,21 @@ bool vesc_service(esc_telem_t* telem) {
                         if (pl[0] == COMM_GET_VALUES) {
                             got_telem = parse_get_values(pl, g_rx_payload_len, telem);
                         }
+                    } else {
+                        static uint32_t last_crc_err = 0;
+                        uint32_t now = millis();
+                        if (now - last_crc_err > 5000) {
+                            last_crc_err = now;
+                            Serial.printf("[VESC] CRC error (pl_len=%u)\n", g_rx_payload_len);
+                        }
+                    }
+                } else {
+                    static uint32_t last_stop_err = 0;
+                    uint32_t now = millis();
+                    if (now - last_stop_err > 5000) {
+                        last_stop_err = now;
+                        Serial.printf("[VESC] bad stop byte 0x%02X (pl_len=%u)\n",
+                                      g_rx_buf[expected - 1], g_rx_payload_len);
                     }
                 }
                 // Reset
@@ -212,6 +227,8 @@ bool vesc_service(esc_telem_t* telem) {
 
         // Zabezpieczenie przed overflow
         if (g_rx_count >= sizeof(g_rx_buf)) {
+            Serial.printf("[VESC] RX overflow (buf=%zu, pl_len=%u)\n",
+                          sizeof(g_rx_buf), g_rx_payload_len);
             g_rx_in_frame = false;
             g_rx_payload_len = 0;
             g_rx_count = 0;
