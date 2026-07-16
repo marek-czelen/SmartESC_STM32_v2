@@ -80,7 +80,7 @@
 // ============================================================================
 
 /// Dolny próg przepustnicy [ADC RAW] — poniżej = 0%
-#define THR_ADC_MIN             250
+#define THR_ADC_MIN             400
 
 /// Górny próg przepustnicy [ADC RAW] — powyżej = 100%
 #define THR_ADC_MAX             2600

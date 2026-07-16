@@ -114,6 +114,10 @@ void pas_init(const pas_config_t* config) {
     attachInterrupt(digitalPinToInterrupt(PIN_PAS), pas_isr, CHANGE);
 }
 
+// ============================================================================
+// Odczyt uśrednionych danych PAS, gotowych do użycia w loop()
+// ============================================================================
+
 void pas_get_data(pas_data_t* out) {
     if (out == nullptr) return;
 
