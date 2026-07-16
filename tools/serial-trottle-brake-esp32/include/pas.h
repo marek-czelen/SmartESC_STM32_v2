@@ -6,6 +6,7 @@
 #define PAS_QUEUE_SIZE 50
 #define PAS_MIN_SAMPLE_COUNT 5
 #define PAS_MAX_RPM 200.0f
+#define PAS_MIN_RPM 7.0f
 #include <stdint.h>
 #include <stdbool.h>
 

@@ -147,6 +147,10 @@ static float compute_target_current() {
         if (g_pas_data.pedal_rpm > PAS_MAX_RPM) {
             return rx->current_limit_a; // maksymalny prąd
         }
+        else if (g_pas_data.pedal_rpm < PAS_MIN_RPM) {
+            return 0.0f; // brak wspomagania
+        }
+
         // Docelowy prąd = limit prądu * (kadencja / PAS_MAX_RPM) * (assist_level / MAX_ASSIST_LEVEL)
         return (float)rx->current_limit_a * (g_pas_data.pedal_rpm / PAS_MAX_RPM) * (float)rx->assist_level / MAX_ASSIST_LEVEL; 
 
@@ -192,7 +196,7 @@ static void print_debug() {
         unsigned long since_last = g_last_telem_valid_ms > 0 ? (now - g_last_telem_valid_ms) : 0;
         Serial.printf("[DBG] thr=%.2f brake=%d | "
                       "PAS: cad=%.0f fwd=%d | "
-                      "S866: lvl=%d conn=%d P10=%d  P12=%d P14=%d | "
+                      "S866: lvl=%d conn=%d P10=%d  P13=%d P14=%d | "
                       "ESC: --- brak telemetrii (od %lums) ---\n",
                       g_throttle, g_brake_active,
                       g_pas_data.pedal_rpm, g_pas_data.direction,
@@ -204,12 +208,12 @@ static void print_debug() {
     Serial.printf(
         "[DBG] thr=%.2f brake=%d | "
         "PAS: cad=%.0f fwd=%d | "
-        "S866: lvl=%d conn=%d P10=%d | "
+        "S866: lvl=%d conn=%d P10=%d  P13=%d P14=%d| "
         "ESC: V=%.1fV Ibat=%.1fA Imot=%.1fA rpm=%.0f "
-        "current=%.1f%% temp=%.0f/%.0f\u00B0C Wh=%.1f run=%d fault=%d\n",
+        "current=%.1fA temp=%.0f/%.0f\u00B0C Wh=%.1f run=%d fault=%d\n",
         g_throttle, g_brake_active,
         g_pas_data.pedal_rpm, g_pas_data.direction, 
-        g_display.rx.assist_level, g_display.connected, g_display.rx.throttle_mode,
+        g_display.rx.assist_level, g_display.connected, g_display.rx.throttle_mode,g_display.rx.speed_magnets, g_display.rx.current_limit_a,
         g_esc_telem.v_in,
         g_esc_telem.current_in,
         g_esc_telem.current_motor,
@@ -278,8 +282,7 @@ void loop() {
     s866_service(&g_display);
 
     // --- 2. Odczyt czujników ---
-    pas_data_t pas_data;
-    pas_get_data(&pas_data);
+    pas_get_data(&g_pas_data);
     g_throttle = read_throttle();
     g_brake_active = read_brake();
 
