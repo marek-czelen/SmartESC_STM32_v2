@@ -29,6 +29,7 @@
 #define MAX_ASSIST_LEVEL 15
 #define MIN_THROTTLE 0.05f
 
+
 // // ============================================================================
 // // PAS — konfiguracja (nowy moduł z przerwaniem CHANGE)
 // // ============================================================================
@@ -40,6 +41,9 @@ static pas_config_t g_pas_cfg = {
     .cadence_tau_s    = PAS_DEFAULT_CADENCE_TAU_S,
     .direction_invert = false,
 };
+
+
+static uint8_t torque_simulation = 0;
 
 // ============================================================================
 // Zmienne globalne — czujniki
@@ -117,6 +121,18 @@ float get_target_current(uint8_t assist_level, pas_data_t* pas, uint8_t current_
     return target;
 }
 
+float get_pas_current(){
+    s866_rx_params_t* rx = &g_display.rx;
+    if (torque_simulation ==1){
+        return (float)rx->current_limit_a * (g_pas_data.pedal_rpm / PAS_MAX_RPM) * (float)rx->assist_level / MAX_ASSIST_LEVEL; 
+    }else {
+        if (g_pas_data.pedal_rpm > PAS_MIN_RPM){
+             return (float)rx->current_limit_a * (float)rx->assist_level / MAX_ASSIST_LEVEL; 
+        }
+        else return 0;
+             
+    }
+}
 
 
 // ============================================================================
@@ -152,13 +168,13 @@ static float compute_target_current() {
         }
 
         // Docelowy prąd = limit prądu * (kadencja / PAS_MAX_RPM) * (assist_level / MAX_ASSIST_LEVEL)
-        return (float)rx->current_limit_a * (g_pas_data.pedal_rpm / PAS_MAX_RPM) * (float)rx->assist_level / MAX_ASSIST_LEVEL; 
-
+        return get_pas_current();
+        
     }
 
     // --- Tryb 2: PAS + przepustnica (domyślny) ---
     float throtle_current = g_throttle * (float)rx->current_limit_a;
-    float pas_current = (float)rx->current_limit_a * (g_pas_data.pedal_rpm / PAS_MAX_RPM) * (float)rx->assist_level / MAX_ASSIST_LEVEL; 
+    float pas_current = get_pas_current();
     if (throtle_current > pas_current) {
         return throtle_current;
     }else {
