@@ -1,6 +1,10 @@
 #ifndef PAS_H
 #define PAS_H
 
+#define PAS_DEFAULT_MAGNETS 12
+#define PAS_DEFAULT_CADENCE_TAU_S 2
+#define PAS_QUEUE_SIZE 50
+#define PAS_MIN_SAMPLE_COUNT 5
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -11,10 +15,21 @@
 typedef struct {
     uint8_t  magnets;              ///< Liczba magnesów na tarczy (domyślnie 12)
     float    dir_ratio_thresh;     ///< Próg R=H/L do kierunku (1.0 = H>L = FWD)
-    uint8_t  dir_confirm;          ///< Ile zgodnych impulsów do zmiany kierunku
-    uint8_t  cadence_avg_n;        ///< Próbek do średniej ruchomej kadencji
+    uint8_t  cadence_data_count;   ///< Ile próbek do wygładzenia kadencji (EMA)
+    uint8_t  cadence_tau_s;          ///< Stała czasowa EMA kadencji [s] (domyślnie 2.0)
     bool     direction_invert;     ///< Odwróć FWD/REV
 } pas_config_t;
+
+
+// ============================================================================
+// Surowe dane z przerwania (ISR)
+// ============================================================================
+typedef struct {
+    uint64_t pulse_timestamp_us;  ///< Timestamp impulsu [µs]
+    uint32_t high_us;              ///< Ostatni czas HIGH [µs]
+    uint32_t low_us;               ///< Ostatni czas LOW [µs]
+    uint32_t period;                ///< Surowe RPM impulsów magnetycznych (obliczane w ISR)
+} pas_raw_data_t;
 
 // ============================================================================
 // Wynik pas_get_data()
@@ -22,13 +37,7 @@ typedef struct {
 
 typedef struct {
     float    pedal_rpm;            ///< Wygładzona kadencja [RPM] (0 = brak)
-    float    pulse_rpm;            ///< Surowe RPM impulsów magnetycznych
-    bool     forward;              ///< true = FWD, false = REV
-    bool     direction_valid;      ///< Czy kierunek został potwierdzony
-    uint32_t high_us;              ///< Ostatni czas HIGH [µs]
-    uint32_t low_us;               ///< Ostatni czas LOW [µs]
-    uint32_t period_us;            ///< Ostatni okres HIGH+LOW [µs]
-    uint32_t pulse_count;          ///< Licznik wszystkich odebranych impulsów
+    bool     direction;           ///< true = FWD, false = REV
 } pas_data_t;
 
 // ============================================================================
@@ -48,6 +57,6 @@ void pas_init(const pas_config_t* config);
  * @param out  Wskaźnik do struktury wynikowej.
  * @return true gdy są nowe dane (out jest świeży).
  */
-bool pas_get_data(pas_data_t* out);
+void pas_get_data(pas_data_t* out);
 
 #endif // PAS_H

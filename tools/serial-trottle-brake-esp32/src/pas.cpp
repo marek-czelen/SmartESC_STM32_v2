@@ -11,6 +11,7 @@
 
 #include "pas.h"
 #include <Arduino.h>
+#include <queue>
 #include "pinout.h"
 
 // ============================================================================
@@ -36,12 +37,17 @@ static volatile uint32_t g_pulse_count   = 0;
 // ============================================================================
 
 static pas_config_t  g_cfg;
-static float         g_cad_buf[10];      // bufor do średniej
-static uint8_t       g_buf_idx   = 0;
-static uint8_t       g_buf_count = 0;
+static float         g_cad_ema = 0.0f;   // EMA kadencji
+static uint32_t      g_last_ema_us = 0;  // timestamp poprzedniej aktualizacji EMA
 static int8_t        g_dir_score = 0;    // licznik potwierdzeń kierunku
 static bool          g_forward   = false;
 static bool          g_dir_valid = false;
+
+// ============================================================================
+// kolejka z danymi z przerwań
+// ============================================================================
+std::deque<pas_raw_data_t> g_pas_queue;
+
 
 // ============================================================================
 // ISR — przerwanie na każdym zboczu
@@ -69,6 +75,16 @@ static void IRAM_ATTR pas_isr() {
             g_period_us = g_high_us + g_low_us;
             g_new_period = true;
             g_pulse_count++;
+            // Dodaj dane do kolejki
+            pas_raw_data_t raw;
+            raw.pulse_timestamp_us = now;
+            raw.high_us  = g_high_us;
+            raw.low_us   = g_low_us;
+            raw.period   = g_period_us; // okres w µs
+            g_pas_queue.push_back(raw);
+            if (g_pas_queue.size() > PAS_QUEUE_SIZE) {
+                g_pas_queue.pop_front(); // usuń najstarszy element, jeśli kolejka jest zbyt długa
+            }
         }
     }
 }
@@ -80,96 +96,70 @@ static void IRAM_ATTR pas_isr() {
 void pas_init(const pas_config_t* config) {
     // Kopiuj konfigurację z domyślnymi wartościami
     g_cfg = *config;
-    if (g_cfg.magnets == 0)          g_cfg.magnets = 12;
+    if (g_cfg.magnets == 0)          g_cfg.magnets = PAS_DEFAULT_MAGNETS;
     if (g_cfg.dir_ratio_thresh == 0) g_cfg.dir_ratio_thresh = 1.0f;
-    if (g_cfg.dir_confirm == 0)      g_cfg.dir_confirm = 3;
-    if (g_cfg.cadence_avg_n == 0)    g_cfg.cadence_avg_n = 10;
-    if (g_cfg.cadence_avg_n > 10)    g_cfg.cadence_avg_n = 10;
+    if (g_cfg.cadence_data_count == 0) g_cfg.cadence_data_count = PAS_MIN_SAMPLE_COUNT;
+    if (g_cfg.cadence_tau_s == 0) g_cfg.cadence_tau_s = PAS_DEFAULT_CADENCE_TAU_S;
 
     pinMode(PIN_PAS, INPUT_PULLUP);
     g_last_edge_us = micros();
 
     // Reset stanu
-    g_forward   = false;
-    g_dir_valid = false;
-    g_dir_score = 0;
-    g_buf_idx   = 0;
-    g_buf_count = 0;
+    g_forward     = false;
+    g_dir_valid   = false;
+    g_dir_score   = 0;
+    g_cad_ema     = 0.0f;
+    g_last_ema_us = 0;
 
     attachInterrupt(digitalPinToInterrupt(PIN_PAS), pas_isr, CHANGE);
 }
 
-// ============================================================================
-// Odczyt danych — wywołuj w loop()
-// ============================================================================
+void pas_get_data(pas_data_t* out) {
+    if (out == nullptr) return;
 
-bool pas_get_data(pas_data_t* out) {
-    if (!g_new_period) {
-        return false;
-    }
-    g_new_period = false;
+    // Domyślne wartości
+    out->pedal_rpm = 0.0f;
+    out->direction = g_forward;
+    uint32_t total_period = 0;
+    uint32_t total_forward = 0;
+    uint32_t total_backward = 0;  
+    uint64_t now_us = micros();
 
-    // --- Snapshot zmiennych ISR ---
-    uint32_t high   = g_high_us;
-    uint32_t low    = g_low_us;
-    uint32_t period = g_period_us;
-    uint32_t count  = g_pulse_count;
-
-    // --- Kierunek z proporcji H/L ---
-    float ratio   = (low > 0) ? (float)high / (float)low : 1.0f;
-    bool raw_fwd  = (ratio > g_cfg.dir_ratio_thresh);
-    if (g_cfg.direction_invert) {
-        raw_fwd = !raw_fwd;
-    }
-
-    if (raw_fwd) {
-        if (g_dir_score < (int8_t)g_cfg.dir_confirm) g_dir_score++;
-    } else {
-        if (g_dir_score > -(int8_t)g_cfg.dir_confirm) g_dir_score--;
-    }
-
-    if (g_dir_score >= (int8_t)g_cfg.dir_confirm) {
-        g_forward   = true;
-        g_dir_valid = true;
-    } else if (g_dir_score <= -(int8_t)g_cfg.dir_confirm) {
-        g_forward   = false;
-        g_dir_valid = true;
-    } else {
-        g_dir_valid = false;
-    }
-
-    // --- Surowe RPM ---
-    float pulse_rpm = (period > 0) ? 60000000.0f / (float)period : 0.0f;
-    float cad_raw   = (g_cfg.magnets > 0) ? pulse_rpm / (float)g_cfg.magnets : 0.0f;
-
-    // --- Średnia ruchoma kadencji (tylko poprawny kierunek FWD) ---
-    float cad_avg = 0.0f;
-    if (g_dir_valid && g_forward && cad_raw > 0.0f) {
-        g_cad_buf[g_buf_idx] = cad_raw;
-        g_buf_idx  = (g_buf_idx + 1) % g_cfg.cadence_avg_n;
-        if (g_buf_count < g_cfg.cadence_avg_n) {
-            g_buf_count++;
+    // Usuń stare dane z kolejki (starsze niż g_cfg.cadence_tau_s sekund)
+    for(auto it = g_pas_queue.begin(); it != g_pas_queue.end(); ) {
+        if (it->pulse_timestamp_us + g_cfg.cadence_tau_s*1000000 < now_us) {
+            it = g_pas_queue.erase(it); // usuń stare dane
+        } else {
+            ++it;
         }
-
-        for (uint8_t i = 0; i < g_buf_count; i++) {
-            cad_avg += g_cad_buf[i];
+    }
+    // Jeśli kolejka jest pusta, zwróć brak danych
+    if (g_pas_queue.empty()) {
+        return; // brak danych
+    }
+    // Jeśli jest mniej próbek niż wymagane do wygładzania, zwróć brak danych
+    if (g_pas_queue.size() < g_cfg.cadence_data_count) {
+        // Za mało próbek do obliczeń
+        return;
+    }
+    //przetwarzamy dane z kolejki, liczymy sumaryczny okres i kierunek    
+    for (const auto& raw : g_pas_queue) {
+        total_period += raw.period;
+        uint8_t dir = (raw.high_us > raw.low_us) ? 1 : 0;
+        if (dir == 1) {
+            total_forward++;
+        } else {
+            total_backward++;
         }
-        cad_avg /= (float)g_buf_count;
-    } else {
-        // Reverse lub brak pedałowania — reset bufora
-        g_buf_count = 0;
-        g_buf_idx   = 0;
     }
 
-    // --- Wypełnij wynik ---
-    out->pedal_rpm       = cad_avg;
-    out->pulse_rpm       = pulse_rpm;
-    out->forward         = g_forward;
-    out->direction_valid = g_dir_valid;
-    out->high_us         = high;
-    out->low_us          = low;
-    out->period_us       = period;
-    out->pulse_count     = count;
-
-    return true;
+    if (total_forward > total_backward) {
+        out->direction = true; // FWD
+        out->pedal_rpm = (float)60000000 / (total_period / g_pas_queue.size() * g_cfg.magnets); 
+    } else if (total_backward > total_forward) {
+        out->direction = false; // REV
+        g_forward = false;
+        out->pedal_rpm = (float)60000000 / (total_period / g_pas_queue.size() * g_cfg.magnets);
+    }
 }
+
